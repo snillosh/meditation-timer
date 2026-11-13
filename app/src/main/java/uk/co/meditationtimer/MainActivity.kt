@@ -27,11 +27,21 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.onEach
 import java.time.*
 import java.time.format.DateTimeFormatter
 
 class MeditationModel(app: Application): AndroidViewModel(app) {
     val engine=TimerEngine.get(app)
+    var quote by mutableStateOf<Quote?>(null); private set
+    private val zenQuotes=ZenQuotes()
+    suspend fun observeQuotes() {
+        try {
+            quoteConnectivity(getApplication()).onEach { online -> if(!online) quote=null }
+                .collectLatest { online -> quote=if(online) zenQuotes.load() else null }
+        } finally { quote=null }
+    }
     var active by mutableStateOf<Session?>(null); private set
     var history by mutableStateOf<List<Completed>>(emptyList()); private set
     var preferences by mutableStateOf(Preferences()); private set
@@ -123,6 +133,10 @@ class MainActivity: ComponentActivity() {
         }
     }
     override fun onResume() { super.onResume(); model.recover() }
+    fun quoteAttribution() {
+        try { startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(ZenQuotes.ATTRIBUTION_URL))) }
+        catch(_:Exception) { /* No browser: leave the meditation screen undisturbed. */ }
+    }
     fun notifications() {
         if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -147,7 +161,7 @@ class MainActivity: ComponentActivity() {
             Spacer(Modifier.height(24.dp)); Text("Still",style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Light)
             Text(listOf("A little space to be.","Every quiet moment counts.","Make room for your practice.")[tab],color=MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(16.dp))
-            when(tab) { 0 -> Meditation(m); 1 -> History(m.history,onImport={a.importHistory()},onExport={a.exportHistory()},transferBusy=m.transferBusy) { row -> m.action {m.engine.store.delete(row.id);null} }; else -> PreferencesScreen(m,a) }
+            when(tab) { 0 -> Meditation(m) { a.quoteAttribution() }; 1 -> History(m.history,onImport={a.importHistory()},onExport={a.exportHistory()},transferBusy=m.transferBusy) { row -> m.action {m.engine.store.delete(row.id);null} }; else -> PreferencesScreen(m,a) }
         }
     }
     m.pendingImport?.let { rows ->
@@ -162,7 +176,9 @@ class MainActivity: ComponentActivity() {
     }
     m.error?.let { text -> AlertDialog(onDismissRequest={m.error=null},title={Text("Timer needs attention")},text={Text(text)},confirmButton={TextButton(onClick={m.error=null}){Text("OK")}}) }
 }
-@Composable fun Meditation(m: MeditationModel) {
+@Composable fun Meditation(m: MeditationModel, openAttribution: () -> Unit) {
+    val owner=androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(owner) { owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { m.observeQuotes() } }
     val s=m.active; val left=s?.left(SystemClock.elapsedRealtime()) ?: (m.preferences.minutes*60000L)
     var custom by remember { mutableStateOf(false) }; var end by remember { mutableStateOf(false) }
     var tick by remember { mutableLongStateOf(0) }
@@ -194,6 +210,8 @@ class MainActivity: ComponentActivity() {
             Text("Let your screen lock naturally.",color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.height(24.dp))
+        QuoteCard(m.quote,openAttribution)
+        if(m.quote!=null) Spacer(Modifier.height(24.dp))
     }
     if(custom) DurationDialog(m.preferences.minutes,{custom=false}) { m.save(m.preferences.copy(minutes=it)); custom=false }
     if(end) AlertDialog(onDismissRequest={end=false},title={Text("End this session?")},text={Text("Incomplete meditation will be discarded and will not count towards your history or streak.")},confirmButton={TextButton(onClick={m.action {m.engine.end();null};end=false}){Text("End session")}},dismissButton={TextButton(onClick={end=false}){Text("Keep meditating")}})

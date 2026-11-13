@@ -2,7 +2,7 @@
 
 Use a Pixel 7 Pro with the intended GrapheneOS build. All audible delivery, routing, battery policy, silent/DND and physical lock-screen checks below require a real device. Emulator results cannot replace them.
 
-1. Install the debug APK. Open Timer Health; allow Alarms & reminders. Allow notifications. Check all three channels. Enable airplane mode to confirm offline use.
+1. Install the debug APK. Open Timer Health; allow Alarms & reminders. Allow notifications. Check all three channels. Enable airplane mode to confirm core features work offline and the quote card is absent.
 2. Start a normal five-minute meditation. Check the start bell plays once, countdown and progress work, completion plays once and stops, history gains exactly one five-minute session.
 3. Start another session; lock the phone normally. Confirm the screen stays off and bell sounds at completion. Return and confirm history updates without duplicates.
 4. Start a session and switch to another app. Repeat completion with the meditation app backgrounded, both with the screen on and locked.
@@ -22,5 +22,7 @@ Use a Pixel 7 Pro with the intended GrapheneOS build. All audible delivery, rout
 17. In History, browse previous/next months and return with Today. Tap active and empty dates: verify only that day’s sessions appear below the overall statistics, with the correct count/minutes or empty message. Multiple sessions on one date must produce one dot and their summed minutes. Delete a session and verify its date total, selected-day list and statistics update. Check month/year boundaries, February/leap years, dark/light themes, TalkBack date labels and activity recreation while viewing a past month.
 
 18. Export history to a local document and confirm the success count. Import into a disposable fresh installation: check dates, zones, calendar, totals and streaks match. Import again: no duplicates. Cancel the file picker and confirmation: no history change. Try malformed JSON, an unsupported version, invalid dates/durations, an oversized file and a conflicting session ID: show an error and preserve all existing history. Test a read-only/unavailable document location and an empty-history backup. Transfers must not change an active timer or play any bell.
+
+19. With internet available, open Meditation and check quote text, author and the ZenQuotes attribution link. Turn off all connectivity while the quote is visible: the entire quote card must disappear. Launch offline: no quote placeholder, error dialog or stored fallback. Reconnect and return to Meditation; a quote may appear after a successful request. Test captive portals, service errors/timeouts and repeated navigation: no crashes, repeated rapid requests or impact on timer/bell delivery. Test attribution with and without a browser. No quote is stored in exported history.
 
 Record device OS build, app commit, permissions, battery configuration, elapsed/actual callback times, audio result and whether the bell was heard. API success is not proof of a heard bell. A test that completes only upon reopening demonstrates recovery, not verified background delivery.
