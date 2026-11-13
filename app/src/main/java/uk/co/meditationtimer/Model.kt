@@ -28,3 +28,10 @@ fun nextReminder(now: ZonedDateTime, hour: Int, minute: Int): ZonedDateTime {
     if (!next.isAfter(now)) next = now.toLocalDate().plusDays(1).atTime(hour, minute).atZone(now.zone)
     return next
 }
+
+/** Monday-first rows, padded with empty cells so neighbouring months never look selectable. */
+fun calendarWeeks(month: YearMonth): List<List<LocalDate?>> {
+    val offset = month.atDay(1).dayOfWeek.value - 1
+    val cells = List<LocalDate?>(offset) { null } + (1..month.lengthOfMonth()).map(month::atDay)
+    return (cells + List<LocalDate?>((7 - cells.size % 7) % 7) { null }).chunked(7)
+}

@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -80,7 +81,7 @@ class MainActivity: ComponentActivity() {
     val version=m.refreshVersion
     val owner=androidx.lifecycle.compose.LocalLifecycleOwner.current
     LaunchedEffect(owner) { owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { while(isActive) { m.refresh(); delay(1000) } } }
-    var tab by remember { mutableIntStateOf(0) }
+    var tab by rememberSaveable { mutableIntStateOf(0) }
     Scaffold(bottomBar={ NavigationBar {
         listOf("Meditation","History","Settings").forEachIndexed { i,label -> NavigationBarItem(selected=tab==i,onClick={tab=i},icon={Text(listOf("◉","▤","⚙")[i])},label={Text(label)}) }
     } }) { padding ->
@@ -88,7 +89,7 @@ class MainActivity: ComponentActivity() {
             Spacer(Modifier.height(24.dp)); Text("Still",style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Light)
             Text(listOf("A little space to be.","Every quiet moment counts.","Make room for your practice.")[tab],color=MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(16.dp))
-            when(tab) { 0 -> Meditation(m); 1 -> History(m); else -> PreferencesScreen(m,a) }
+            when(tab) { 0 -> Meditation(m); 1 -> History(m.history) { row -> m.action {m.engine.store.delete(row.id);null} }; else -> PreferencesScreen(m,a) }
         }
     }
     m.error?.let { text -> AlertDialog(onDismissRequest={m.error=null},title={Text("Timer needs attention")},text={Text(text)},confirmButton={TextButton(onClick={m.error=null}){Text("OK")}}) }
@@ -133,10 +134,24 @@ class MainActivity: ComponentActivity() {
     var value by remember { mutableStateOf(initial.toString()) }
     AlertDialog(onDismissRequest=dismiss,title={Text("Meditation duration")},text={OutlinedTextField(value=value,onValueChange={value=it.filter(Char::isDigit).take(3)},label={Text("Minutes · 1–120")},singleLine=true)},confirmButton={TextButton(enabled=value.toIntOrNull() in 1..120,onClick={save(value.toInt())}){Text("Save")}},dismissButton={TextButton(onClick=dismiss){Text("Cancel")}})
 }
-@Composable fun History(m: MeditationModel) {
-    val stats=statistics(m.history,LocalDate.now()); var deleting by remember { mutableStateOf<Completed?>(null) }
+@Composable fun History(sessions: List<Completed>, onDelete: (Completed) -> Unit) {
+    val today=LocalDate.now()
+    var selectedDay by rememberSaveable { mutableStateOf(today.toString()) }
+    var displayedMonth by rememberSaveable { mutableStateOf(YearMonth.from(today).toString()) }
+    val selectedDate=LocalDate.parse(selectedDay)
+    val month=YearMonth.parse(displayedMonth)
+    val dailySessions=sessions.filter { it.date==selectedDate }
+    val stats=statistics(sessions,today); var deleting by remember { mutableStateOf<Completed?>(null) }
     LazyColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp)) {
+        item(key="calendar") {
+            HistoryCalendar(month,selectedDate,today,sessions,
+                onMonthChange={ next ->
+                    displayedMonth=next.toString()
+                    selectedDay=next.atDay(minOf(selectedDate.dayOfMonth,next.lengthOfMonth())).toString()
+                },
+                onSelectDate={ selectedDay=it.toString() })
+        }
+        item(key="statistics") { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp)) {
             Text("Your practice",style=MaterialTheme.typography.titleLarge)
             Text("${stats.count} sessions · ${stats.minutes} minutes",style=MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp)); Text("Current streak: ${stats.current} days\nLongest streak: ${stats.longest} days")
@@ -149,14 +164,20 @@ class MainActivity: ComponentActivity() {
                 } }
             }
         } } }
-        if(m.history.isEmpty()) item { Text("Completed sessions will appear here.",modifier=Modifier.padding(vertical=24.dp)) }
-        items(m.history,key={it.id}) { row -> Card(Modifier.fillMaxWidth()) { Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
+        item(key="day-heading") {
+            Column(Modifier.padding(top=8.dp)) {
+                Text(selectedDate.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy")),style=MaterialTheme.typography.titleMedium)
+                Text("${dailySessions.size} sessions · ${dailySessions.sumOf { it.duration }/60000} minutes",color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if(dailySessions.isEmpty()) item { Text("No sessions this day.",modifier=Modifier.padding(vertical=16.dp)) }
+        items(dailySessions,key={it.id}) { row -> Card(Modifier.fillMaxWidth()) { Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { Text(row.date.format(DateTimeFormatter.ofPattern("EEE, d MMM yyyy"))); Text("${Instant.ofEpochMilli(row.millis).atZone(ZoneId.of(row.zone)).format(DateTimeFormatter.ofPattern("HH:mm"))} · ${row.duration/60000} min",color=MaterialTheme.colorScheme.onSurfaceVariant) }
             TextButton(onClick={deleting=row}) { Text("Delete") }
         } } }
         item { Spacer(Modifier.height(16.dp)) }
     }
-    deleting?.let { row -> AlertDialog(onDismissRequest={deleting=null},title={Text("Delete this session?")},text={Text("Statistics and streaks will update from the remaining history.")},confirmButton={TextButton(onClick={m.action {m.engine.store.delete(row.id);null};deleting=null}){Text("Delete")}},dismissButton={TextButton(onClick={deleting=null}){Text("Cancel")}}) }
+    deleting?.let { row -> AlertDialog(onDismissRequest={deleting=null},title={Text("Delete this session?")},text={Text("Statistics and streaks will update from the remaining history.")},confirmButton={TextButton(onClick={onDelete(row);deleting=null}){Text("Delete")}},dismissButton={TextButton(onClick={deleting=null}){Text("Cancel")}}) }
 }
 @Composable fun Health(title: String,status: String,detail: String,action: String?=null,run: ()->Unit={}) {
     Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) {

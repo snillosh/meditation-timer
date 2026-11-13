@@ -17,12 +17,17 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 Initial dependency resolution requires internet on the build machine. The installed app works offline. Grant **Alarms & reminders** from Settings → Timer Health before starting. Notifications are recommended for session visibility and required for visible daily reminders. Denying notification permission does not block timers or the brief foreground bell service.
 
+## History calendar
+
+History opens with a Monday-first monthly calendar, followed by overall statistics and the selected day's sessions. Active days show a dot and total completed minutes. Tap a date to filter the sessions, use the arrows to browse months, or Today to return to the current day. Empty dates show an explicit empty state. Deletion keeps its confirmation and updates calendar totals and statistics. Calendar dates use each session's stored completion date; no database migration is needed.
+
 ## Architecture
 
 - `Model.kt`: pure monotonic countdown/state calculations, statistics and local-time reminder calculation.
 - `TimerEngine.kt`: one application-scoped, serialized timer coordinator. A persisted session ID and revision reject stale callbacks after pause, resume and cancellation. All transitions use this coordinator. No UI delay performs completion.
 - `Storage.kt`: versioned SQLite database for active state and history; DataStore preferences. SQLite is used directly to keep the small atomic active-session/history transaction easy to inspect, without a Room code-generation dependency. The session primary key and conditional transaction prevent duplicate history entries. Statistics derive from history; nothing increments redundant counters.
 - `Background.kt`: alarm receivers, inexact reminder scheduling and short media-playback foreground service. A mutex serializes reminder scheduling/delivery. One date marker suppresses repeat reminders on the same local day.
+- `HistoryCalendar.kt`: accessible monthly date grid, daily totals and date selection.
 - `MainActivity.kt`: Compose Material 3 screens and ViewModel. Foreground-only refreshes render persisted state; rendering does not keep the timer alive. No screen wake lock, background polling, or always-running service.
 
 ### Locked-screen completion
