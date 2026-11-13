@@ -63,3 +63,7 @@ Deterministic unit tests cover countdown, pause/resume, paused-time exclusion, c
 Android instrumentation tests exercise actual SQLite persistence/transactions and coordinator completion/cancellation/recovery with an injected clock. Instrumentation tests clear the app database: use an emulator or disposable test installation, not your personal meditation history.
 
 See [GrapheneOS manual checklist](docs/TESTING.md) and [original requirements](docs/BRIEF.md). Physical GrapheneOS locked-screen playback has **not** been verified by this project build.
+
+## GitHub Actions
+
+Pushes and pull requests to `main` run unit tests, lint and a debug APK build. You can also run the workflow manually. Open [Actions](https://github.com/snillosh/meditation-timer/actions), select a successful run, and download its APK artifact from the summary; extract `app-debug.apk` to install. APKs are retained for 30 days and reports for 14 days. Emulator tests remain a local check. CI caches its debug signing key; if that cache expires, installing a newly signed APK over an earlier build may require uninstalling first (which deletes local history). Local and CI debug signing keys also differ.
