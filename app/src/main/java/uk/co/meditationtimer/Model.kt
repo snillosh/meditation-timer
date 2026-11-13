@@ -35,3 +35,11 @@ fun calendarWeeks(month: YearMonth): List<List<LocalDate?>> {
     val cells = List<LocalDate?>(offset) { null } + (1..month.lengthOfMonth()).map(month::atDay)
     return (cells + List<LocalDate?>((7 - cells.size % 7) % 7) { null }).chunked(7)
 }
+
+val DEFAULT_DURATION_PRESETS = listOf(5, 10, 15, 20, 30)
+
+/** Preserve the user's order; duplicates and invalid entries are errors rather than silently removed. */
+fun parseDurationPresets(text: String): List<Int>? {
+    val values = text.split(',').map { it.trim().toIntOrNull() ?: return null }
+    return values.takeIf { it.size in 1..8 && it.distinct().size == it.size && it.all { n -> n in 1..120 } }
+}

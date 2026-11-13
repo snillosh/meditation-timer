@@ -10,12 +10,22 @@ import kotlinx.coroutines.flow.map
 import java.time.*
 
 val Context.preferences by preferencesDataStore("preferences")
-data class Preferences(val minutes: Int = 10, val reminder: Boolean = false, val hour: Int = 9, val minute: Int = 0)
+data class Preferences(val minutes: Int = 10, val reminder: Boolean = false, val hour: Int = 9, val minute: Int = 0, val presets: List<Int> = DEFAULT_DURATION_PRESETS)
 class PreferenceStore(private val context: Context) {
     private val duration = intPreferencesKey("minutes"); private val enabled = booleanPreferencesKey("reminder")
     private val hour = intPreferencesKey("hour"); private val minute = intPreferencesKey("minute")
-    val flow = context.preferences.data.map { Preferences(it[duration] ?: 10, it[enabled] ?: false, it[hour] ?: 9, it[minute] ?: 0) }
-    suspend fun save(p: Preferences) { context.preferences.edit { it[duration] = p.minutes; it[enabled] = p.reminder; it[hour] = p.hour; it[minute] = p.minute } }
+    private val presets = stringPreferencesKey("duration_presets")
+    val flow = context.preferences.data.map {
+        Preferences(it[duration] ?: 10, it[enabled] ?: false, it[hour] ?: 9, it[minute] ?: 0,
+            it[presets]?.let(::parseDurationPresets) ?: DEFAULT_DURATION_PRESETS)
+    }
+    suspend fun save(p: Preferences) {
+        require(parseDurationPresets(p.presets.joinToString(",")) == p.presets) { "Invalid preset durations." }
+        context.preferences.edit {
+            it[duration] = p.minutes; it[enabled] = p.reminder; it[hour] = p.hour; it[minute] = p.minute
+            it[presets] = p.presets.joinToString(",")
+        }
+    }
 }
 class AndroidClock(private val context: Context): Clock {
     override fun elapsed() = SystemClock.elapsedRealtime()

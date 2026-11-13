@@ -195,9 +195,7 @@ class MainActivity: ComponentActivity() {
         }
         Spacer(Modifier.height(28.dp))
         if(s==null) {
-            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly) {
-                listOf(5,10,15,20,30).forEach { n -> FilterChip(selected=m.preferences.minutes==n,onClick={m.save(m.preferences.copy(minutes=n))},label={Text("$n")}) }
-            }
+            DurationPresetButtons(m.preferences.presets,m.preferences.minutes) { n -> m.save(m.preferences.copy(minutes=n)) }
             TextButton(onClick={custom=true}) { Text("Custom duration · ${m.preferences.minutes} min") }
             if(androidx.compose.ui.platform.LocalContext.current.getSystemService(android.media.AudioManager::class.java).getStreamVolume(android.media.AudioManager.STREAM_ALARM)==0) {
                 Text("Alarm volume is muted. Raise it in sound settings to hear completion.",color=MaterialTheme.colorScheme.error)
@@ -282,6 +280,7 @@ class MainActivity: ComponentActivity() {
 @Composable fun PreferencesScreen(m: MeditationModel,a: MainActivity) {
     var duration by remember { mutableStateOf(false) }; var time by remember { mutableStateOf(false) }
     var test by remember { mutableStateOf(false) }
+    var presets by rememberSaveable { mutableStateOf(false) }
     val p=m.preferences
     val refresh=m.refreshVersion
     // Re-evaluated on the ViewModel's foreground refresh, including return from Settings.
@@ -295,6 +294,7 @@ class MainActivity: ComponentActivity() {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("Meditation preferences",style=MaterialTheme.typography.titleLarge)
         OutlinedButton(onClick={duration=true},modifier=Modifier.fillMaxWidth()) { Text("Default duration · ${p.minutes} min") }
+        OutlinedButton(onClick={presets=true},modifier=Modifier.fillMaxWidth()) { Text("Preset durations · ${p.presets.joinToString(", ")} min") }
         Row(verticalAlignment=Alignment.CenterVertically) { Text("Daily reminder",Modifier.weight(1f)); Switch(checked=p.reminder,onCheckedChange={m.save(p.copy(reminder=it))}) }
         OutlinedButton(onClick={time=true},modifier=Modifier.fillMaxWidth()) { Text("Reminder time · %02d:%02d".format(p.hour,p.minute)) }
         Text("Timer Health",style=MaterialTheme.typography.titleLarge)
@@ -334,6 +334,7 @@ class MainActivity: ComponentActivity() {
         Spacer(Modifier.height(24.dp))
     }
     if(duration) DurationDialog(p.minutes,{duration=false}) { m.save(p.copy(minutes=it));duration=false }
+    if(presets) DurationPresetsDialog(p.presets,{presets=false}) { m.save(m.preferences.copy(presets=it));presets=false }
     if(time) {
         DisposableEffect(Unit) {
             val dialog=TimePickerDialog(a,{_,h,min -> m.save(p.copy(hour=h,minute=min));time=false},p.hour,p.minute,true)
