@@ -21,6 +21,12 @@ Initial dependency resolution requires internet on the build machine. The instal
 
 History opens with a Monday-first monthly calendar, followed by overall statistics and the selected day's sessions. Active days show a dot and total completed minutes. Tap a date to filter the sessions, use the arrows to browse months, or Today to return to the current day. Empty dates show an explicit empty state. Deletion keeps its confirmation and updates calendar totals and statistics. Calendar dates use each session's stored completion date; no database migration is needed.
 
+## Import and export history
+
+In History, tap **Export** to save a `still-history-YYYY-MM-DD.json` backup through Android's document picker. Tap **Import**, select a backup and confirm to merge it. Identical session IDs/content are skipped, so importing the same backup twice does not duplicate sessions. Conflicting IDs or invalid entries reject the whole import without changing existing history. Calendar, totals and streaks update from the merged records. Import does not sound a bell or alter the active timer.
+
+The version-1 JSON format stores each session's ID, completion timestamp (`completedAt`, Unix milliseconds), duration (`durationMillis`), completion-day date (`localDate`, ISO) and original time zone (`zoneId`). It preserves the saved completion date across devices. Backups contain completed history only, with a `still-history` format identifier and export timestamp. Files are limited to 10 MB / 10,000 sessions. Keep backups somewhere you trust: they are plain text, not encrypted. The app needs no storage permission or network permission; the system picker handles the location you choose. Canceling a picker or import confirmation leaves history unchanged.
+
 ## Architecture
 
 - `Model.kt`: pure monotonic countdown/state calculations, statistics and local-time reminder calculation.

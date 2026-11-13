@@ -40,6 +40,34 @@ class Store(context: Context): SQLiteOpenHelper(context, "still.db", null, 1) {
     fun note(key: String): String = readableDatabase.rawQuery("SELECT value FROM notes WHERE key=?",arrayOf(key)).use { if(it.moveToFirst()) it.getString(0) else "No test run yet." }
     fun history(): List<Completed> = readableDatabase.rawQuery("SELECT * FROM sessions ORDER BY millis DESC",null).use { c -> buildList { while(c.moveToNext()) add(Completed(c.getString(0),c.getLong(1),c.getLong(2),LocalDate.parse(c.getString(3)),c.getString(4))) } }
     fun delete(id: String) { writableDatabase.delete("sessions","id=?", arrayOf(id)) }
+    /** Merge atomically. A conflicting ID aborts the entire import rather than overwriting history. */
+    fun importHistory(rows: List<Completed>): ImportResult {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val existing = history().associateBy { it.id }.toMutableMap()
+            val activeId = active()?.id
+            var added = 0
+            var skipped = 0
+            rows.forEach { row ->
+                require(row.id != activeId) { "Backup conflicts with the active timer. End it before importing." }
+                val previous = existing[row.id]
+                if (previous != null) {
+                    require(previous == row) { "A session ID has different contents. Nothing was imported." }
+                    skipped++
+                } else {
+                    db.insertOrThrow("sessions", null, ContentValues().apply {
+                        put("id",row.id); put("millis",row.millis); put("duration",row.duration)
+                        put("date",row.date.toString()); put("zone",row.zone)
+                    })
+                    existing[row.id] = row
+                    added++
+                }
+            }
+            db.setTransactionSuccessful()
+            return ImportResult(added, skipped)
+        } finally { db.endTransaction() }
+    }
     fun complete(s: Session, wall: Long): Boolean {
         val db = writableDatabase; db.beginTransaction()
         try {

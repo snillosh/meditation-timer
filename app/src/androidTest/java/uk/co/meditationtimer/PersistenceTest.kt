@@ -33,6 +33,25 @@ class PersistenceTest {
             assertEquals(java.time.LocalDate.of(2026,11,13),store.history().single().date)
         } finally { java.util.TimeZone.setDefault(original) }
     }
+    @Test fun historyImportMergesAndSkipsDuplicatesAcrossReopen() {
+        val row=Completed("imported",1800000000000,60000,java.time.LocalDate.of(2027,1,15),"UTC")
+        val backup=HistoryBackup.encode(listOf(row))
+        assertEquals(ImportResult(1,1),store.importHistory(HistoryBackup.decode(HistoryBackup.encode(listOf(row,row)))))
+        store.close();store=Store(context)
+        assertEquals(ImportResult(0,1),store.importHistory(HistoryBackup.decode(backup)))
+        assertEquals(listOf(row),store.history())
+    }
+    @Test fun conflictingImportRollsBackAllRowsAndPreservesActiveTimer() {
+        val row=Completed("existing",1800000000000,60000,java.time.LocalDate.of(2027,1,15),"UTC")
+        store.importHistory(listOf(row))
+        val active=session();store.save(active)
+        assertThrows(IllegalArgumentException::class.java) {
+            store.importHistory(listOf(row.copy(id="new"),row.copy(duration=120000)))
+        }
+        assertEquals(listOf(row),store.history());assertEquals(active,store.active())
+        assertThrows(IllegalArgumentException::class.java) { store.importHistory(listOf(row.copy(id=active.id))) }
+        assertEquals(listOf(row),store.history());assertEquals(active,store.active())
+    }
     @Test fun activeStateSurvivesReopen() { val s=session().pause(5000);store.save(s);store.close();store=Store(context);assertEquals(s,store.active()) }
 }
 

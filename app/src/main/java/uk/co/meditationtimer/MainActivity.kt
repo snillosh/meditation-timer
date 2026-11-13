@@ -39,7 +39,51 @@ class MeditationModel(app: Application): AndroidViewModel(app) {
     var message by mutableStateOf(""); private set
     var refreshVersion by mutableLongStateOf(0); private set
     var error by mutableStateOf<String?>(null)
+    var transferBusy by mutableStateOf(false); private set
+    var transferMessage by mutableStateOf<String?>(null)
+    var pendingImport by mutableStateOf<List<Completed>?>(null)
     private val prefs=PreferenceStore(app)
+    private fun transfer(block: () -> String) {
+        if(transferBusy) return
+        transferBusy=true
+        viewModelScope.launch {
+            try { transferMessage=withContext(Dispatchers.IO) { block() }; refresh() }
+            catch(e: Exception) {
+                if(e is CancellationException) throw e
+                transferMessage=e.message ?: "Unable to access the selected file. Please try another location."
+            } finally { transferBusy=false }
+        }
+    }
+    fun exportHistory(uri: Uri) = transfer {
+        val rows=engine.store.history()
+        val json=HistoryBackup.encode(rows)
+        val resolver=getApplication<Application>().contentResolver
+        (resolver.openOutputStream(uri,"wt") ?: error("Unable to write to this file.")).bufferedWriter(Charsets.UTF_8).use { it.write(json) }
+        "Exported ${rows.size} sessions."
+    }
+    fun readImport(uri: Uri) {
+        if(transferBusy) return
+        transferBusy=true
+        viewModelScope.launch {
+            try {
+                pendingImport=withContext(Dispatchers.IO) {
+                    val resolver=getApplication<Application>().contentResolver
+                    (resolver.openInputStream(uri) ?: error("Unable to open this file.")).use { HistoryBackup.read(it) }
+                }
+            } catch(e: Exception) {
+                if(e is CancellationException) throw e
+                transferMessage=e.message ?: "Unable to read this backup."
+            } finally { transferBusy=false }
+        }
+    }
+    fun confirmImport() {
+        val rows=pendingImport ?: return
+        pendingImport=null
+        transfer {
+            val result=engine.store.importHistory(rows)
+            "Imported ${result.added} sessions; skipped ${result.skipped} duplicates."
+        }
+    }
     init {
         viewModelScope.launch { prefs.flow.collect { preferences=it } }
 
@@ -54,6 +98,20 @@ class MeditationModel(app: Application): AndroidViewModel(app) {
 }
 class MainActivity: ComponentActivity() {
     private val model by lazy { ViewModelProvider(this)[MeditationModel::class.java] }
+    private val exportDocument=registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if(uri!=null) model.exportHistory(uri)
+    }
+    private val importDocument=registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if(uri!=null) model.readImport(uri)
+    }
+    fun exportHistory() {
+        try { exportDocument.launch("still-history-${LocalDate.now()}.json") }
+        catch(_:Exception) { model.transferMessage="No document picker is available on this device." }
+    }
+    fun importHistory() {
+        try { importDocument.launch(arrayOf("application/json","text/plain","application/octet-stream")) }
+        catch(_:Exception) { model.transferMessage="No document picker is available on this device." }
+    }
     private val notificationPermission=registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); enableEdgeToEdge(); Notifications.channels(this)
@@ -89,8 +147,18 @@ class MainActivity: ComponentActivity() {
             Spacer(Modifier.height(24.dp)); Text("Still",style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Light)
             Text(listOf("A little space to be.","Every quiet moment counts.","Make room for your practice.")[tab],color=MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(16.dp))
-            when(tab) { 0 -> Meditation(m); 1 -> History(m.history) { row -> m.action {m.engine.store.delete(row.id);null} }; else -> PreferencesScreen(m,a) }
+            when(tab) { 0 -> Meditation(m); 1 -> History(m.history,onImport={a.importHistory()},onExport={a.exportHistory()},transferBusy=m.transferBusy) { row -> m.action {m.engine.store.delete(row.id);null} }; else -> PreferencesScreen(m,a) }
         }
+    }
+    m.pendingImport?.let { rows ->
+        AlertDialog(onDismissRequest={m.pendingImport=null},title={Text("Import history?")},
+            text={Text("Merge ${rows.size} session entries into your history? Existing sessions stay unchanged. Identical IDs are skipped; conflicting IDs reject the entire import.")},
+            confirmButton={TextButton(onClick={m.confirmImport()}){Text("Import")}},
+            dismissButton={TextButton(onClick={m.pendingImport=null}){Text("Cancel")}})
+    }
+    m.transferMessage?.let { text ->
+        AlertDialog(onDismissRequest={m.transferMessage=null},title={Text("History transfer")},text={Text(text)},
+            confirmButton={TextButton(onClick={m.transferMessage=null}){Text("OK")}})
     }
     m.error?.let { text -> AlertDialog(onDismissRequest={m.error=null},title={Text("Timer needs attention")},text={Text(text)},confirmButton={TextButton(onClick={m.error=null}){Text("OK")}}) }
 }
@@ -134,7 +202,7 @@ class MainActivity: ComponentActivity() {
     var value by remember { mutableStateOf(initial.toString()) }
     AlertDialog(onDismissRequest=dismiss,title={Text("Meditation duration")},text={OutlinedTextField(value=value,onValueChange={value=it.filter(Char::isDigit).take(3)},label={Text("Minutes · 1–120")},singleLine=true)},confirmButton={TextButton(enabled=value.toIntOrNull() in 1..120,onClick={save(value.toInt())}){Text("Save")}},dismissButton={TextButton(onClick=dismiss){Text("Cancel")}})
 }
-@Composable fun History(sessions: List<Completed>, onDelete: (Completed) -> Unit) {
+@Composable fun History(sessions: List<Completed>, onImport: () -> Unit = {}, onExport: () -> Unit = {}, transferBusy: Boolean = false, onDelete: (Completed) -> Unit) {
     val today=LocalDate.now()
     var selectedDay by rememberSaveable { mutableStateOf(today.toString()) }
     var displayedMonth by rememberSaveable { mutableStateOf(YearMonth.from(today).toString()) }
@@ -143,6 +211,13 @@ class MainActivity: ComponentActivity() {
     val dailySessions=sessions.filter { it.date==selectedDate }
     val stats=statistics(sessions,today); var deleting by remember { mutableStateOf<Completed?>(null) }
     LazyColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        item(key="transfer") {
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick=onImport,enabled=!transferBusy,modifier=Modifier.weight(1f)) { Text("Import") }
+                OutlinedButton(onClick=onExport,enabled=!transferBusy,modifier=Modifier.weight(1f)) { Text("Export") }
+            }
+            if(transferBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
         item(key="calendar") {
             HistoryCalendar(month,selectedDate,today,sessions,
                 onMonthChange={ next ->
