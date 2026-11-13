@@ -1,0 +1,22 @@
+# GrapheneOS acceptance checklist
+
+Use a Pixel 7 Pro with the intended GrapheneOS build. All audible delivery, routing, battery policy, silent/DND and physical lock-screen checks below require a real device. Emulator results cannot replace them.
+
+1. Install the debug APK. Open Timer Health; allow Alarms & reminders. Allow notifications. Check all three channels. Enable airplane mode to confirm offline use.
+2. Start a normal five-minute meditation. Check the start bell plays once, countdown and progress work, completion plays once and stops, history gains exactly one five-minute session.
+3. Start another session; lock the phone normally. Confirm the screen stays off and bell sounds at completion. Return and confirm history updates without duplicates.
+4. Start a session and switch to another app. Repeat completion with the meditation app backgrounded, both with the screen on and locked.
+5. Pause partway through, leave it paused for a minute, rotate/recreate activity, then resume. The paused minute must not count; completion must move later. Repeat pause/resume several times near the endpoint and confirm one completion.
+6. End a session early. Verify confirmation/cancel behaviour. Wait past its old deadline: no bell and no history/streak credit. Start a new session and ensure the previous alarm cannot complete it.
+7. Use Timer Health → Test Timer Reliability. Start 60 seconds, lock the phone, wait, then return. Inspect expected time, actual callback, monotonic lateness, handler source and audio result. The result must remain pending until a real handler runs. No history/statistics credit. Record whether you actually heard the bell separately.
+8. Repeat the test under normal battery optimisation, then under Unrestricted app battery behaviour. Wait between short tests to avoid Doze exact-alarm frequency limits; record late delivery rather than interpreting it as a successful on-time test.
+9. Deny notification permission. A timer should still complete through the alarm and short service, but active notifications/reminders will be unavailable. Health should explain the missing permission. Also block individual channels and check channel shortcuts.
+10. Test normal, silent, vibrate and DND modes, plus zero notification volume and alternate audio routing. Bells must never increase volume, bypass DND, loop or continue indefinitely.
+11. Enable a daily reminder a few minutes ahead. Tap it to open the app. Disable and verify no further reminders. Test a blocked reminder channel. Delivery may be delayed by battery management. Reboot and change time zone/time, verify one appropriately rescheduled reminder with no duplicate local-day delivery.
+12. Reboot during both running and paused sessions. Reopen: unfinished session discarded, clear recovery message, no fabricated history or streak credit; saved history and preferences remain.
+13. Remove exact-alarm special access during a session and reopen. Confirm the app reports/pauses affected state and does not promise a reliable running timer without access. Grant again and test resume.
+14. Test normal process death (e.g. `adb shell am kill uk.co.meditationtimer` after backgrounding, **not** force-stop). The alarm receiver should record one completion while the UI process is absent. Contrast with explicit force-stop: delivery is unsupported until reopening. Check diagnostics distinguish foreground recovery if it was needed.
+15. Complete sessions on successive days, more than one per day, and around midnight. Confirm current streak includes yesterday during today, resets after a missed day, and longest streak is correct. Delete a bridging history entry and verify recalculation. Change time zone and verify old stored completion dates stay stable.
+16. Try all preset/custom durations, reject 0/121/nonnumeric input, restart and verify last duration/reminder preferences. Check history order, deletion confirmation, weekly totals, light/dark theme, large font scale and navigation.
+
+Record device OS build, app commit, permissions, battery configuration, elapsed/actual callback times, audio result and whether the bell was heard. API success is not proof of a heard bell. A test that completes only upon reopening demonstrates recovery, not verified background delivery.
