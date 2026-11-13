@@ -69,18 +69,21 @@ class BellService: Service() {
         ServiceCompat.startForeground(this,4,Notifications.builder(this,Notifications.BELL).setContentTitle("Meditation bell").setSilent(true).build(),ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         player?.release(); player=null; handler.removeCallbacksAndMessages(null)
         val test=intent?.getStringExtra("test")
+        val completion=intent?.getBooleanExtra("completion",false)==true
         try {
             val audio=getSystemService(AudioManager::class.java)
             val notifications=getSystemService(NotificationManager::class.java)
-            if(audio.ringerMode!=AudioManager.RINGER_MODE_NORMAL || notifications.currentInterruptionFilter!=NotificationManager.INTERRUPTION_FILTER_ALL) {
-                diagnostic(test,"Skipped for silent/vibrate or Do Not Disturb."); stopSelf(); return START_NOT_STICKY
+            if(BellAudio.skip(completion,audio.ringerMode,notifications.currentInterruptionFilter)) {
+                diagnostic(test,"Start bell skipped for silent/vibrate or Do Not Disturb."); stopSelf(); return START_NOT_STICKY
             }
-            val resource=if(intent?.getBooleanExtra("completion",false)==true) R.raw.completion_bell else R.raw.start_bell
+            val resource=if(completion) R.raw.completion_bell else R.raw.start_bell
             val mp=MediaPlayer(); player=mp
-            mp.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+            mp.setAudioAttributes(BellAudio.attributes(completion))
             resources.openRawResourceFd(resource).use { mp.setDataSource(it.fileDescriptor,it.startOffset,it.length) }
             mp.isLooping=false; mp.setOnCompletionListener { stopSelf() }; mp.setOnErrorListener { _,what,extra -> diagnostic(test,"Playback error $what/$extra"); stopSelf(); true }
-            mp.prepare(); mp.start(); diagnostic(test,"Playback invoked successfully; notification volume ${audio.getStreamVolume(AudioManager.STREAM_NOTIFICATION)}.")
+            mp.prepare(); mp.start()
+            val stream=if(completion) AudioManager.STREAM_ALARM else AudioManager.STREAM_NOTIFICATION
+            diagnostic(test,"Playback invoked successfully; ${if(completion) "alarm" else "notification"} volume ${audio.getStreamVolume(stream)}. DND policy remains system-controlled.")
             handler.postDelayed({ stopSelf() },5000)
         } catch(e:Exception) { diagnostic(test,"Playback failed: ${e.message}"); stopSelf() }
         return START_NOT_STICKY
@@ -96,4 +99,24 @@ class BellService: Service() {
             c.startForegroundService(Intent(c,BellService::class.java).putExtra("completion",completion).putExtra("test",test))
         }
     }
+}
+
+/** Completion is an alarm; Android applies alarm volume and the user's DND alarm exceptions. */
+object BellAudio {
+    fun attributes(completion: Boolean): AudioAttributes = AudioAttributes.Builder()
+        .setUsage(if(completion) AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_NOTIFICATION_EVENT)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+
+    fun skip(completion: Boolean, ringer: Int, filter: Int) = !completion &&
+        (ringer != AudioManager.RINGER_MODE_NORMAL || filter != NotificationManager.INTERRUPTION_FILTER_ALL)
+
+    fun alarmsAllowed(manager: NotificationManager): Boolean? = runCatching {
+        when(manager.currentInterruptionFilter) {
+            NotificationManager.INTERRUPTION_FILTER_ALL, NotificationManager.INTERRUPTION_FILTER_ALARMS -> true
+            NotificationManager.INTERRUPTION_FILTER_NONE -> false
+            NotificationManager.INTERRUPTION_FILTER_PRIORITY ->
+                manager.consolidatedNotificationPolicy.priorityCategories and NotificationManager.Policy.PRIORITY_CATEGORY_ALARMS != 0
+            else -> null
+        }
+    }.getOrNull()
 }

@@ -114,6 +114,9 @@ class MainActivity: ComponentActivity() {
                 listOf(5,10,15,20,30).forEach { n -> FilterChip(selected=m.preferences.minutes==n,onClick={m.save(m.preferences.copy(minutes=n))},label={Text("$n")}) }
             }
             TextButton(onClick={custom=true}) { Text("Custom duration · ${m.preferences.minutes} min") }
+            if(androidx.compose.ui.platform.LocalContext.current.getSystemService(android.media.AudioManager::class.java).getStreamVolume(android.media.AudioManager.STREAM_ALARM)==0) {
+                Text("Alarm volume is muted. Raise it in sound settings to hear completion.",color=MaterialTheme.colorScheme.error)
+            }
             Button(onClick={m.action { m.engine.start(m.preferences.minutes*60000L) }},modifier=Modifier.fillMaxWidth().height(56.dp)) { Text("Begin meditation") }
             if(m.message.isNotBlank()) { Spacer(Modifier.height(20.dp)); Text(m.message,style=MaterialTheme.typography.bodyLarge) }
         } else {
@@ -198,7 +201,17 @@ class MainActivity: ComponentActivity() {
         val service=a.packageManager.getServiceInfo(android.content.ComponentName(a,BellService::class.java),0)
         Health("Bell foreground service",if(service.foregroundServiceType and android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK!=0) "Ready · Informational" else "Needs attention","Only runs during the short bell. No continuously running timer service and no user-grantable service permission screen.")
         val resourcesReady=remember { runCatching { listOf(R.raw.start_bell,R.raw.completion_bell).forEach { id -> a.resources.openRawResourceFd(id).use { check(it.length>0) } }; true }.getOrDefault(false) }
-        Health("Bell audio",if(resourcesReady) "Ready · Required" else "Needs attention · Required","Local placeholder bells are available. Playback respects notification volume, silent/vibrate and Do Not Disturb. ${m.engine.store.note("audio").takeUnless { it=="No test run yet." } ?: "Test to check loading and playback."}","Test bell") { m.action { try {BellService.start(a,true,null);null} catch(e:Exception) {e.message} } }
+        Health("Bell audio",if(resourcesReady) "Ready · Required" else "Needs attention · Required","Local placeholder bells are available. Completion plays once using alarm volume, including silent/vibrate. DND must allow alarms. The start bell still respects silent mode. ${m.engine.store.note("audio").takeUnless { it=="No test run yet." } ?: "Test to check loading and playback."}","Test bell") { m.action { try {BellService.start(a,true,null);null} catch(e:Exception) {e.message} } }
+        val alarmVolume=a.getSystemService(android.media.AudioManager::class.java).getStreamVolume(android.media.AudioManager.STREAM_ALARM)
+        Health("Alarm volume",if(alarmVolume==0) "Needs attention · Muted" else "Ready · $alarmVolume",
+            "Completion and test bells use your alarm volume. The app never changes it. A zero alarm volume will silence the bell.","Sound settings") {
+            a.settings(Intent(Settings.ACTION_SOUND_SETTINGS))
+        }
+        val dndAllowsAlarms=BellAudio.alarmsAllowed(nm)
+        Health("Do Not Disturb",when(dndAllowsAlarms) { true -> "Ready · Alarms currently allowed"; false -> "Needs attention · Alarms blocked"; null -> "Recommended · Check alarm exceptions" },
+            "Allow alarms in each DND mode you use. Future scheduled modes may apply different rules. The app does not bypass DND or request permission to change it.","Do Not Disturb settings") {
+            a.settings(Intent(Settings.ACTION_ZEN_MODE_PRIORITY_SETTINGS))
+        }
         Health("Reminder",if(!p.reminder) "Not applicable · Disabled" else if(!notices || !reminderChannelEnabled) "Needs attention" else "Ready · Optional",if(p.reminder) "Daily at %02d:%02d local time. Delivery may be delayed. ${if(!notices || !reminderChannelEnabled) "Notification permission or reminder channel is disabled." else "Notifications enabled."}".format(p.hour,p.minute) else "Disabled by default. No exact access needed.")
         val s=m.active
         Health("Active session","Ready · Informational",s?.let { if(it.state=="paused") "Paused · ${it.remaining/1000} seconds remain." else "Running · expected ${java.text.DateFormat.getTimeInstance().format(java.util.Date(m.engine.clock.wall()+it.left(m.engine.clock.elapsed())))}" } ?: "No active session.")

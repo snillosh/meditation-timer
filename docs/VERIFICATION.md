@@ -25,3 +25,9 @@ Screen: still asleep
 ```
 
 This establishes background receiver execution and an accepted playback call on this AVD. The emulator was run without host audio. It does not establish a heard bell, physical lock-screen audio behaviour, deep-Doze delivery or GrapheneOS-specific battery policy. Perform [the device checklist](TESTING.md) before relying on it for personal sessions.
+
+## Alarm-audio follow-up
+
+Completion and reliability-test playback now use `USAGE_ALARM`; the start bell retains notification audio and its quiet-mode checks. Completion remains single-play with the existing automatic release and five-second bound. No permission or volume/DND mutation was added. Timer Health reports alarm volume and current DND alarm eligibility (or an unknown status if unavailable), with safe settings shortcuts. A muted alarm-volume warning also appears before starting meditation.
+
+Validation: debug build, 20 JVM tests, 13 emulator instrumentation tests, and lint (zero errors) passed. The three added instrumentation tests verify alarm usage/stream routing, no app-side suppression of completion for silent/vibrate/DND, and unchanged start-bell suppression. These tests do not prove audibility. The background smoke test above predates this audio change; physical silent/vibrate and DND allow/block checks remain required as described in TESTING.md.
