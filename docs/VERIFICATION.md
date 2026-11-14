@@ -55,3 +55,7 @@ Validation: debug compilation, 33 JVM tests, 18 emulator instrumentation tests a
 Settings now edits 1–8 unique preset durations (1–120 minutes) in user-defined order, with Save, Cancel and Reset. Presets persist in DataStore, fall back to the original choices for existing/malformed settings, and wrap across rows on Meditation. The selected/default duration and active session remain independent of the preset list. No timer, alarm or history schema changes.
 
 Validation: debug build, 36 JVM tests, 21 emulator instrumentation tests and lint (zero errors) passed. Added tests cover valid/order-preserving lists, boundaries/duplicates/invalid input, editor validation/save/reset/cancel, duration-button selection, DataStore persistence and fallback without losing the selected duration. The pre-existing untracked Gradle daemon configuration was left outside this commit.
+
+## Timer Health submenu — 14 November 2026
+
+Moved permission, battery, audio and active-session checks, bell testing, reliability test and last result into Settings → Timer Health. Both the on-screen return action and Android Back return to preferences. Debug build, 36 JVM tests, 22 emulator instrumentation tests and lint passed. The new navigation test checks that diagnostics are absent on the landing page and available only inside the submenu.

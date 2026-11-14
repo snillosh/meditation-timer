@@ -27,4 +27,6 @@ Use a Pixel 7 Pro with the intended GrapheneOS build. All audible delivery, rout
 
 20. In Settings → Preset durations, enter `3, 7, 42, 120`, save and check the meditation buttons and their selection/countdown. Restart and verify the values/order persist. Try one preset and eight presets (buttons should wrap), duplicates, empty input, 0, 121 and nonnumeric input. Invalid lists must disable Save. Cancel must discard edits. Reset must require Save to apply the original defaults. Edit presets while a session is active/paused and verify its deadline/remaining time and the separately selected default duration stay unchanged.
 
+21. Verify the Settings landing page contains meditation preferences and a Timer Health entry, with no expanded diagnostics/tests. Open the submenu and verify all original checks, settings shortcuts, bell test, reliability test and last result remain available. Use both Back to Settings and Android Back to return. Return from Android Settings and verify diagnostic statuses refresh.
+
 Record device OS build, app commit, permissions, battery configuration, elapsed/actual callback times, audio result and whether the bell was heard. API success is not proof of a heard bell. A test that completes only upon reopening demonstrates recovery, not verified background delivery.

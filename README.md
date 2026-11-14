@@ -17,6 +17,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 Initial dependency resolution requires internet on the build machine. All core app features work offline; the quote card stays hidden without internet. Grant **Alarms & reminders** from Settings → Timer Health before starting. Notifications are recommended for session visibility and required for visible daily reminders. Denying notification permission does not block timers or the brief foreground bell service.
 
+## Timer Health
+
+Settings → **Timer Health** opens a dedicated submenu for permission/channel checks, battery behaviour, bell audio and alarm/DND settings, active-session diagnostics, the 60-second reliability test and its result. Use Back to Settings or Android Back to return to meditation preferences. Checks refresh while the screen is open and after returning from Android Settings.
+
 ## Duration presets
 
 Settings → **Preset durations** lets you choose 1–8 unique durations from 1 to 120 minutes, entered as a comma-separated list. Your order is preserved and the meditation screen wraps buttons onto additional rows as needed. Save applies the list; Cancel discards edits; Reset loads the original 5, 10, 15, 20, 30 minute choices into the editor (press Save to apply). Preferences persist across restarts. Editing presets does not change the selected/default duration or an active session; you can still choose any custom duration independently. Existing installations retain the original presets until edited.
