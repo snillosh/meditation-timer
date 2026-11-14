@@ -5,14 +5,16 @@ import java.time.*
 interface Clock { fun elapsed(): Long; fun wall(): Long; fun boot(): Int }
 data class Session(val id: String, val duration: Long, val remaining: Long, val deadline: Long,
     val boot: Int, val state: String = "running", val test: Boolean = false, val expectedWall: Long = 0,
-    val generation: Int = 0) {
+    val generation: Int = 0, val kind: String = MEDITATION, val accrued: Long = 0, val started: Long = 0) {
+    val open: Boolean get() = kind == MINDFUL_OPEN
+    fun activeMillis(now: Long) = accrued + if (state == "running") (now - started).coerceAtLeast(0) else 0
     fun left(now: Long) = if (state == "running") (deadline - now).coerceIn(0, duration) else remaining
-    fun pause(now: Long) = copy(remaining = left(now), state = "paused", generation = generation + 1)
-    fun resume(now: Long, wall: Long) = copy(deadline = now + remaining, expectedWall = wall + remaining,
+    fun pause(now: Long) = if(open) copy(accrued=activeMillis(now), state="paused", generation=generation+1) else copy(remaining = left(now), state = "paused", generation = generation + 1)
+    fun resume(now: Long, wall: Long) = if(open) copy(started=now, state="running", generation=generation+1) else copy(deadline = now + remaining, expectedWall = wall + remaining,
         state = "running", generation = generation + 1)
-    fun due(now: Long, currentBoot: Int, token: String, revision: Int) = state == "running" && boot == currentBoot && id == token && generation == revision && now >= deadline
+    fun due(now: Long, currentBoot: Int, token: String, revision: Int) = !open && state == "running" && boot == currentBoot && id == token && generation == revision && now >= deadline
 }
-data class Completed(val id: String, val millis: Long, val duration: Long, val date: LocalDate, val zone: String)
+data class Completed(val id: String, val millis: Long, val duration: Long, val date: LocalDate, val zone: String, val kind: String = MEDITATION)
 data class Stats(val count: Int, val minutes: Long, val current: Int, val longest: Int, val week: List<Long>)
 fun statistics(rows: List<Completed>, today: LocalDate): Stats {
     val days = rows.map { it.date }.toSet().sorted()

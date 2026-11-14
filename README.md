@@ -21,6 +21,20 @@ Initial dependency resolution requires internet on the build machine. All core a
 
 Settings → **Timer Health** opens a dedicated submenu for permission/channel checks, battery behaviour, bell audio and alarm/DND settings, active-session diagnostics, the 60-second reliability test and its result. Use Back to Settings or Android Back to return to meditation preferences. Checks refresh while the screen is open and after returning from Android Settings.
 
+## Mindful Minutes
+
+Settings → **Mindful Minutes** configures a separate, opt-in nudge schedule. Pick individual Monday–Sunday days and one activity:
+
+- **Timed pause:** configurable 1–120 minutes, default two. Tapping a nudge opens an invitation; Begin explicitly starts the normal reliable timer. One alarm-volume completion bell. Ending early discards it.
+- **Open-ended:** Begin starts a monotonic count-up timer, without an exact alarm or ongoing service. Pause/resume excludes paused time. **Finish mindful pause** saves actual active time (at least one second), with no bell; **Discard session** confirms before discarding. Same-boot process recovery works, but reboot discards unfinished practice conservatively.
+- **Prompt only:** opens a calm breathing/presence prompt with Done. No timer, playback, history or streak credit. Opening a prompt leaves any existing session untouched.
+
+Completed timed/open-ended pauses are labelled **Mindful Minutes · Timed/Open-ended** in History and contribute to the same statistics, calendar and streaks as meditation. Open-ended history includes seconds; minute totals aggregate elapsed time and round down to whole minutes. Even a finished sub-minute pause qualifies for a streak day. Prompt-only nudges are never counted.
+
+Choose **fixed times** (1–8 comma-separated 24-hour times) or **random** (1–8 nudges/day within a same-day window). Random windows allow at least 30 minutes per nudge. Each day is split into equal slots; a saved per-install seed chooses a point in the middle half of each slot. Times remain stable after restart, change each day, and are kept at least 15 minutes apart in ordinary local time. Daylight-saving gaps/overlaps are resolved to valid, unique instants and may reduce the day's count.
+
+Only one inexact wake-up alarm is pending at a time. It restores after reboot/app update/time-zone or clock changes. Nudges respect silent/DND and their own notification channel. They never start an activity or session by themselves and need no exact-alarm access; only a timed session explicitly started by you needs that access. Android can delay delivery. Callbacks over an hour late, outside a random window, already handled, on an unselected day, or during an active session are skipped. Random deliveries less than 15 minutes apart are skipped too. Missed slots are not replayed, the configured daily maximum is retained across restarts, and one replaceable notification avoids a stack of missed nudges. Notifications expire after an hour. Ignoring them has no penalty. The existing daily meditation reminder is independent.
+
 ## Duration presets
 
 Settings → **Preset durations** lets you choose 1–8 unique durations from 1 to 120 minutes, entered as a comma-separated list. Your order is preserved and the meditation screen wraps buttons onto additional rows as needed. Save applies the list; Cancel discards edits; Reset loads the original 5, 10, 15, 20, 30 minute choices into the editor (press Save to apply). Preferences persist across restarts. Editing presets does not change the selected/default duration or an active session; you can still choose any custom duration independently. Existing installations retain the original presets until edited.
@@ -33,7 +47,7 @@ History opens with a Monday-first monthly calendar, followed by overall statisti
 
 In History, tap **Export** to save a `still-history-YYYY-MM-DD.json` backup through Android's document picker. Tap **Import**, select a backup and confirm to merge it. Identical session IDs/content are skipped, so importing the same backup twice does not duplicate sessions. Conflicting IDs or invalid entries reject the whole import without changing existing history. Calendar, totals and streaks update from the merged records. Import does not sound a bell or alter the active timer.
 
-The version-1 JSON format stores each session's ID, completion timestamp (`completedAt`, Unix milliseconds), duration (`durationMillis`), completion-day date (`localDate`, ISO) and original time zone (`zoneId`). It preserves the saved completion date across devices. Backups contain completed history only, with a `still-history` format identifier and export timestamp. Files are limited to 10 MB / 10,000 sessions. Keep backups somewhere you trust: they are plain text, not encrypted. The app needs no storage permission or network permission; the system picker handles the location you choose. Canceling a picker or import confirmation leaves history unchanged.
+The version-2 JSON format stores each session's ID, completion timestamp (`completedAt`, Unix milliseconds), duration (`durationMillis`), completion-day date (`localDate`, ISO) original time zone (`zoneId`) and session type (`kind`). Version-1 backups still import as meditation; older app versions cannot read version-2 exports. It preserves the saved completion date across devices. Backups contain completed history only, with a `still-history` format identifier and export timestamp. Files are limited to 10 MB / 10,000 sessions. Keep backups somewhere you trust: they are plain text, not encrypted. The app needs no storage permission or network permission; the system picker handles the location you choose. Canceling a picker or import confirmation leaves history unchanged.
 
 ## Inspirational quotes
 
@@ -45,7 +59,8 @@ Successful responses are kept in memory for up to an hour to limit requests. Fai
 
 - `Model.kt`: pure monotonic countdown/state calculations, statistics and local-time reminder calculation.
 - `TimerEngine.kt`: one application-scoped, serialized timer coordinator. A persisted session ID and revision reject stale callbacks after pause, resume and cancellation. All transitions use this coordinator. No UI delay performs completion.
-- `Storage.kt`: versioned SQLite database for active state and history; DataStore preferences. SQLite is used directly to keep the small atomic active-session/history transaction easy to inspect, without a Room code-generation dependency. The session primary key and conditional transaction prevent duplicate history entries. Statistics derive from history; nothing increments redundant counters.
+- `Storage.kt`: versioned SQLite database for active state and history; DataStore preferences. Schema version 2 adds session type/count-up fields while preserving existing records and active timers. SQLite is used directly to keep the small atomic active-session/history transaction easy to inspect, without a Room code-generation dependency. The session primary key and conditional transaction prevent duplicate history entries. Statistics derive from history; nothing increments redundant counters.
+- `MindfulModel.kt`, `MindfulPreferences.kt`, `MindfulReminders.kt`, `MindfulScreens.kt`: weekday/activity configuration, deterministic daily slots, inexact nudge delivery and mindful UI.
 - `Background.kt`: alarm receivers, inexact reminder scheduling and short media-playback foreground service. A mutex serializes reminder scheduling/delivery. One date marker suppresses repeat reminders on the same local day.
 - `ZenQuotes.kt` / `QuoteCard.kt`: foreground-only quote requests, connectivity handling and attributed quote display.
 - `HistoryCalendar.kt`: accessible monthly date grid, daily totals and date selection.
@@ -81,7 +96,7 @@ Platform references: [alarms and special access](https://developer.android.com/d
 
 Deterministic unit tests cover countdown, pause/resume, paused-time exclusion, completion eligibility, stale callbacks, boot mismatch, persisted pause recovery, statistics, streak gaps and duplicates, deletion, seven-day windows, midnight/time-zone attribution, and reminder DST/local-time scheduling.
 
-Android instrumentation tests exercise actual SQLite persistence/transactions and coordinator completion/cancellation/recovery with an injected clock. Instrumentation tests clear the app database: use an emulator or disposable test installation, not your personal meditation history.
+Android instrumentation tests exercise actual SQLite persistence/transactions and coordinator completion/cancellation/recovery with an injected clock. History fixtures use isolated test databases, but integration tests also exercise real settings and notifications. Use an emulator or disposable test installation, not your personal meditation installation.
 
 See [GrapheneOS manual checklist](docs/TESTING.md) and [original requirements](docs/BRIEF.md). Physical GrapheneOS locked-screen playback has **not** been verified by this project build.
 

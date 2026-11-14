@@ -17,7 +17,8 @@ class TimerReceiver: BroadcastReceiver() {
         val pending=goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                if(intent.action=="reminder") Reminders.deliver(context)
+                if(intent.action=="mindful_nudge") MindfulReminders.deliver(context,intent.getLongExtra("due",0))
+                else if(intent.action=="reminder") Reminders.deliver(context)
                 else TimerEngine.get(context).finish(intent.getStringExtra("id") ?: "",intent.getIntExtra("generation",-1))
             } finally { pending.finish() }
         }
@@ -30,6 +31,7 @@ class SystemReceiver: BroadcastReceiver() {
             try {
                 TimerEngine.get(context).recover(intent.action==Intent.ACTION_BOOT_COMPLETED)
                 Reminders.schedule(context)
+                MindfulReminders.schedule(context)
             } finally { pending.finish() }
         }
     }

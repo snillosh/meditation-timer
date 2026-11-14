@@ -32,7 +32,7 @@ fun TimerHealthScreen(m: MeditationModel, a: MainActivity, onBack: () -> Unit) {
             a.settings(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,Uri.parse("package:${a.packageName}")))
         }
         Health("Notifications",if(notices) "Ready · Recommended" else "Recommended · Disabled","Notifications show the active timer and reminders. Bell playback is separate; a blocked bell service notification does not itself mute audio.","Notification settings") { a.notifications() }
-        listOf(Notifications.ACTIVE,Notifications.BELL,Notifications.REMINDER).forEach { id ->
+        listOf(Notifications.ACTIVE,Notifications.BELL,Notifications.REMINDER,Notifications.MINDFUL).forEach { id ->
             val channel=nm.getNotificationChannel(id)
             Health("Channel · ${channel?.name ?: id}",if(channel!=null && channel.importance!=NotificationManager.IMPORTANCE_NONE) "Ready · Recommended" else "Recommended · Disabled","Channel visibility is controlled by Android.","Channel settings") {
                 a.settings(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,a.packageName).putExtra(Settings.EXTRA_CHANNEL_ID,id))
@@ -57,8 +57,14 @@ fun TimerHealthScreen(m: MeditationModel, a: MainActivity, onBack: () -> Unit) {
             a.settings(Intent(Settings.ACTION_ZEN_MODE_PRIORITY_SETTINGS))
         }
         Health("Reminder",if(!p.reminder) "Not applicable · Disabled" else if(!notices || !reminderChannelEnabled) "Needs attention" else "Ready · Optional",if(p.reminder) "Daily at %02d:%02d local time. Delivery may be delayed. ${if(!notices || !reminderChannelEnabled) "Notification permission or reminder channel is disabled." else "Notifications enabled."}".format(p.hour,p.minute) else "Disabled by default. No exact access needed.")
+        val mindful=m.mindful
+        val mindfulReady=notices && nm.getNotificationChannel(Notifications.MINDFUL)?.importance!=NotificationManager.IMPORTANCE_NONE
+        val due=m.engine.store.note("mindful_due").toLongOrNull()
+        Health("Mindful Minutes",if(mindful?.enabled!=true) "Not applicable · Disabled" else if(!mindfulReady || due==null) "Needs attention" else "Ready · Optional",
+            if(mindful?.enabled!=true) "Enable and configure mindful nudges in Settings." else
+                "${if(due!=null) "Next planned nudge: ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(due))}. " else "No pending nudge. "}Nudges can be delayed or skipped by Android. ${m.engine.store.note("mindful_status")}")
         val s=m.active
-        Health("Active session","Ready · Informational",s?.let { if(it.state=="paused") "Paused · ${it.remaining/1000} seconds remain." else "Running · expected ${java.text.DateFormat.getTimeInstance().format(java.util.Date(m.engine.clock.wall()+it.left(m.engine.clock.elapsed())))}" } ?: "No active session.")
+        Health("Active session","Ready · Informational",s?.let { if(it.open) "Open-ended mindful pause · ${it.activeMillis(m.engine.clock.elapsed())/1000} active seconds." else if(it.state=="paused") "Paused · ${it.remaining/1000} seconds remain." else "Running · expected ${java.text.DateFormat.getTimeInstance().format(java.util.Date(m.engine.clock.wall()+it.left(m.engine.clock.elapsed())))}" } ?: "No active session.")
         Health("60-second reliability test","Informational","Uses the same alarm and bell as meditation. Lock the phone and return after the bell. Tests never count towards history.","Test Timer Reliability") { test=true }
         Health("Last test result","Informational",m.diagnostic+"\nOnly a real device test can establish whether you heard the bell.")
         Spacer(Modifier.height(24.dp))

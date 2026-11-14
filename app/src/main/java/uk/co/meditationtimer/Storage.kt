@@ -32,23 +32,30 @@ class AndroidClock(private val context: Context): Clock {
     override fun wall() = System.currentTimeMillis()
     override fun boot() = Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)
 }
-class Store(context: Context): SQLiteOpenHelper(context, "still.db", null, 1) {
+class Store(context: Context, name: String = "still.db"): SQLiteOpenHelper(context, name, null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
-        db.execSQL("CREATE TABLE active (slot INTEGER PRIMARY KEY CHECK(slot=1), id TEXT, duration INTEGER, remaining INTEGER, deadline INTEGER, boot INTEGER, state TEXT, test INTEGER, expected INTEGER, generation INTEGER)")
-        db.execSQL("CREATE TABLE sessions (id TEXT PRIMARY KEY, millis INTEGER NOT NULL, duration INTEGER NOT NULL, date TEXT NOT NULL, zone TEXT NOT NULL)")
+        db.execSQL("CREATE TABLE active (slot INTEGER PRIMARY KEY CHECK(slot=1), id TEXT, duration INTEGER, remaining INTEGER, deadline INTEGER, boot INTEGER, state TEXT, test INTEGER, expected INTEGER, generation INTEGER, kind TEXT NOT NULL DEFAULT 'meditation', accrued INTEGER NOT NULL DEFAULT 0, started INTEGER NOT NULL DEFAULT 0)")
+        db.execSQL("CREATE TABLE sessions (id TEXT PRIMARY KEY, millis INTEGER NOT NULL, duration INTEGER NOT NULL, date TEXT NOT NULL, zone TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'meditation')")
         db.execSQL("CREATE TABLE notes (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     }
-    override fun onUpgrade(db: SQLiteDatabase, old: Int, new: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, old: Int, new: Int) {
+        if(old < 2) {
+            db.execSQL("ALTER TABLE sessions ADD COLUMN kind TEXT NOT NULL DEFAULT 'meditation'")
+            db.execSQL("ALTER TABLE active ADD COLUMN kind TEXT NOT NULL DEFAULT 'meditation'")
+            db.execSQL("ALTER TABLE active ADD COLUMN accrued INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE active ADD COLUMN started INTEGER NOT NULL DEFAULT 0")
+        }
+    }
     fun active(): Session? = readableDatabase.rawQuery("SELECT * FROM active WHERE slot=1", null).use { c ->
-        if (!c.moveToFirst()) null else Session(c.getString(1),c.getLong(2),c.getLong(3),c.getLong(4),c.getInt(5),c.getString(6),c.getInt(7)==1,c.getLong(8),c.getInt(9))
+        if (!c.moveToFirst()) null else Session(c.getString(1),c.getLong(2),c.getLong(3),c.getLong(4),c.getInt(5),c.getString(6),c.getInt(7)==1,c.getLong(8),c.getInt(9),c.getString(10),c.getLong(11),c.getLong(12))
     }
     fun save(s: Session) { writableDatabase.insertWithOnConflict("active", null, ContentValues().apply {
-        put("slot",1);put("id",s.id);put("duration",s.duration);put("remaining",s.remaining);put("deadline",s.deadline);put("boot",s.boot);put("state",s.state);put("test",if(s.test)1 else 0);put("expected",s.expectedWall);put("generation",s.generation)
+        put("slot",1);put("id",s.id);put("duration",s.duration);put("remaining",s.remaining);put("deadline",s.deadline);put("boot",s.boot);put("state",s.state);put("test",if(s.test)1 else 0);put("expected",s.expectedWall);put("generation",s.generation);put("kind",s.kind);put("accrued",s.accrued);put("started",s.started)
     }, SQLiteDatabase.CONFLICT_REPLACE) }
     fun clear() { writableDatabase.delete("active",null,null) }
     fun note(key: String, value: String) { writableDatabase.insertWithOnConflict("notes",null,ContentValues().apply { put("key",key);put("value",value) },SQLiteDatabase.CONFLICT_REPLACE) }
     fun note(key: String): String = readableDatabase.rawQuery("SELECT value FROM notes WHERE key=?",arrayOf(key)).use { if(it.moveToFirst()) it.getString(0) else "No test run yet." }
-    fun history(): List<Completed> = readableDatabase.rawQuery("SELECT * FROM sessions ORDER BY millis DESC",null).use { c -> buildList { while(c.moveToNext()) add(Completed(c.getString(0),c.getLong(1),c.getLong(2),LocalDate.parse(c.getString(3)),c.getString(4))) } }
+    fun history(): List<Completed> = readableDatabase.rawQuery("SELECT * FROM sessions ORDER BY millis DESC",null).use { c -> buildList { while(c.moveToNext()) add(Completed(c.getString(0),c.getLong(1),c.getLong(2),LocalDate.parse(c.getString(3)),c.getString(4),c.getString(5))) } }
     fun delete(id: String) { writableDatabase.delete("sessions","id=?", arrayOf(id)) }
     /** Merge atomically. A conflicting ID aborts the entire import rather than overwriting history. */
     fun importHistory(rows: List<Completed>): ImportResult {
@@ -68,7 +75,7 @@ class Store(context: Context): SQLiteOpenHelper(context, "still.db", null, 1) {
                 } else {
                     db.insertOrThrow("sessions", null, ContentValues().apply {
                         put("id",row.id); put("millis",row.millis); put("duration",row.duration)
-                        put("date",row.date.toString()); put("zone",row.zone)
+                        put("date",row.date.toString()); put("zone",row.zone); put("kind",row.kind)
                     })
                     existing[row.id] = row
                     added++
@@ -78,13 +85,14 @@ class Store(context: Context): SQLiteOpenHelper(context, "still.db", null, 1) {
             return ImportResult(added, skipped)
         } finally { db.endTransaction() }
     }
-    fun complete(s: Session, wall: Long): Boolean {
+    fun complete(s: Session, wall: Long, openDuration: Long? = null): Boolean {
+        require(!s.open || (openDuration != null && openDuration >= 1000)) { "An open-ended session needs positive active time." }
         val db = writableDatabase; db.beginTransaction()
         try {
-            if (active()?.let { it.id == s.id && it.generation == s.generation && it.state == "running" } != true) return false
+            if (active()?.let { it.id == s.id && it.generation == s.generation && (it.state == "running" || (s.open && it.state == "paused")) } != true) return false
             val zone = ZoneId.systemDefault()
             if (!s.test) db.insertWithOnConflict("sessions",null,ContentValues().apply {
-                put("id",s.id);put("millis",wall);put("duration",s.duration)
+                put("id",s.id);put("millis",wall);put("duration",openDuration ?: s.duration);put("kind",s.kind)
                 put("date",Instant.ofEpochMilli(wall).atZone(zone).toLocalDate().toString());put("zone",zone.id)
             }, SQLiteDatabase.CONFLICT_IGNORE)
             clear(); note("message", if(s.test) "Reliability test completed. Inspect Timer Health." else "Session complete. Take a quiet moment.")

@@ -17,7 +17,7 @@ object HistoryBackup {
         require(rows.size <= MAX_SESSIONS) { "History exceeds the 10,000 session backup limit." }
         val json=JSONObject().apply {
         put("format", "still-history")
-        put("version", 1)
+        put("version", 2)
         put("exportedAt", Instant.now().toString())
         put("sessions", JSONArray().apply {
             rows.forEach { row -> put(JSONObject().apply {
@@ -26,6 +26,7 @@ object HistoryBackup {
                 put("durationMillis", row.duration)
                 put("localDate", row.date.toString())
                 put("zoneId", row.zone)
+                put("kind", row.kind)
             }) }
         })
         }.toString(2)
@@ -52,7 +53,7 @@ object HistoryBackup {
             val parser = JSONTokener(text)
             val root = parser.nextValue() as? JSONObject ?: throw IllegalArgumentException("Expected a history backup JSON object.")
             require(parser.nextClean() == '\u0000') { "Unexpected content after the history backup." }
-            require(root.getString("format") == "still-history" && integer(root, "version") == 1L) {
+            require(root.getString("format") == "still-history" && integer(root, "version") in 1L..2L) {
                 "Unsupported history backup format or version."
             }
             val rows = root.getJSONArray("sessions")
@@ -63,13 +64,16 @@ object HistoryBackup {
                 require(id.isNotBlank() && id.length <= 128) { "Invalid session ID at entry ${index + 1}." }
                 val millis = integer(row, "completedAt")
                 val duration = integer(row, "durationMillis")
-                require(millis >= 0 && duration in 60000L..7200000L) { "Invalid time or duration at entry ${index + 1}." }
+                val kind=if(integer(root,"version")==1L) MEDITATION else row.getString("kind")
+                require(kind in SESSION_KINDS) { "Unknown session type." }
+                val validDuration=if(kind==MINDFUL_OPEN) duration in 1000L..3155760000000L else duration in 60000L..7200000L
+                require(millis >= 0 && validDuration) { "Invalid time or duration at entry ${index + 1}." }
                 val date = LocalDate.parse(row.getString("localDate"))
                 val zone = ZoneId.of(row.getString("zoneId"))
                 require(date.year in 1..9999 && Instant.ofEpochMilli(millis).atZone(zone).toLocalDate() == date) {
                     "Completion date and time do not match at entry ${index + 1}."
                 }
-                Completed(id, millis, duration, date, zone.id)
+                Completed(id, millis, duration, date, zone.id, kind)
             }
         } catch (e: IllegalArgumentException) {
             throw e

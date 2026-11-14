@@ -10,12 +10,12 @@ import org.junit.runner.RunWith
 class PersistenceTest {
     private val context=InstrumentationRegistry.getInstrumentation().targetContext
     private lateinit var store: Store
-    @Before fun before() { context.deleteDatabase("still.db");store=Store(context) }
-    @After fun after() { store.close();context.deleteDatabase("still.db") }
+    @Before fun before() { context.deleteDatabase("test-still.db");store=Store(context,"test-still.db") }
+    @After fun after() { store.close();context.deleteDatabase("test-still.db") }
     private fun session(test: Boolean=false)=Session("fixed-id",60000,60000,61000,2,test=test)
     @Test fun historyPersistsAndCompletionIsExactlyOnce() {
         val s=session();store.save(s);assertTrue(store.complete(s,1800000000000));assertFalse(store.complete(s,1800000000001))
-        store.close();store=Store(context);assertEquals(1,store.history().size);assertNull(store.active())
+        store.close();store=Store(context,"test-still.db");assertEquals(1,store.history().size);assertNull(store.active())
         store.delete(s.id);assertTrue(store.history().isEmpty())
     }
     @Test fun earlyTerminationAndStaleCallbacksCannotComplete() { val s=session();store.save(s);store.clear();assertFalse(store.complete(s,1800000000000));assertTrue(store.history().isEmpty()) }
@@ -37,7 +37,7 @@ class PersistenceTest {
         val row=Completed("imported",1800000000000,60000,java.time.LocalDate.of(2027,1,15),"UTC")
         val backup=HistoryBackup.encode(listOf(row))
         assertEquals(ImportResult(1,1),store.importHistory(HistoryBackup.decode(HistoryBackup.encode(listOf(row,row)))))
-        store.close();store=Store(context)
+        store.close();store=Store(context,"test-still.db")
         assertEquals(ImportResult(0,1),store.importHistory(HistoryBackup.decode(backup)))
         assertEquals(listOf(row),store.history())
     }
@@ -52,7 +52,7 @@ class PersistenceTest {
         assertThrows(IllegalArgumentException::class.java) { store.importHistory(listOf(row.copy(id=active.id))) }
         assertEquals(listOf(row),store.history());assertEquals(active,store.active())
     }
-    @Test fun activeStateSurvivesReopen() { val s=session().pause(5000);store.save(s);store.close();store=Store(context);assertEquals(s,store.active()) }
+    @Test fun activeStateSurvivesReopen() { val s=session().pause(5000);store.save(s);store.close();store=Store(context,"test-still.db");assertEquals(s,store.active()) }
 }
 
 @RunWith(AndroidJUnit4::class)
@@ -66,8 +66,8 @@ class EngineTest {
         override fun boot()=bootId
     }
     private lateinit var clock: FakeClock
-    @Before fun before() { context.deleteDatabase("still.db");clock=FakeClock();engine=TimerEngine(context,clock) { _, _ -> } }
-    @After fun after() { engine.end();engine.store.close();context.deleteDatabase("still.db") }
+    @Before fun before() { context.deleteDatabase("test-engine.db");clock=FakeClock();engine=TimerEngine(context,clock,Store(context,"test-engine.db")) { _, _ -> } }
+    @After fun after() { engine.end();engine.store.close();context.deleteDatabase("test-engine.db") }
     private fun running()=Session("engine-id",60000,60000,61000,7)
     @Test fun completionRequiresFullActiveTimeAndIsIdempotent() {
         val s=running();engine.store.save(s);engine.finish(s.id,0);assertTrue(engine.store.history().isEmpty())

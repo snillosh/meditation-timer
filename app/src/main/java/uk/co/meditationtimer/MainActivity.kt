@@ -35,6 +35,27 @@ import java.time.format.DateTimeFormatter
 
 class MeditationModel(app: Application): AndroidViewModel(app) {
     val engine=TimerEngine.get(app)
+    var mindful by mutableStateOf<MindfulConfig?>(null); private set
+    var invitation by mutableStateOf(false)
+    fun saveMindful(config: MindfulConfig, done: () -> Unit) {
+        viewModelScope.launch {
+            try {
+                MindfulPreferences(getApplication()).save(config)
+                withContext(Dispatchers.IO) { MindfulReminders.schedule(getApplication()) }
+                done()
+            } catch(e:Exception) { if(e is CancellationException) throw e;error=e.message ?: "Unable to save Mindful Minutes." }
+        }
+    }
+    fun beginMindful() {
+        val config=mindful ?: return
+        viewModelScope.launch {
+            error=withContext(Dispatchers.IO) {
+                if(config.activity=="open") engine.startOpen() else engine.start(config.durationMinutes*60000L,kind=MINDFUL_TIMED)
+            }
+            if(error==null) invitation=false
+            refresh()
+        }
+    }
     var quote by mutableStateOf<Quote?>(null); private set
     private val zenQuotes=ZenQuotes()
     suspend fun observeQuotes() {
@@ -97,6 +118,7 @@ class MeditationModel(app: Application): AndroidViewModel(app) {
     }
     init {
         viewModelScope.launch { prefs.flow.collect { preferences=it } }
+        viewModelScope.launch { MindfulPreferences(app).flow.collect { mindful=it } }
 
     }
     suspend fun refresh() = withContext(Dispatchers.IO) {
@@ -105,7 +127,10 @@ class MeditationModel(app: Application): AndroidViewModel(app) {
     }
     fun action(block: () -> String?) { viewModelScope.launch { error=withContext(Dispatchers.IO) { block() }; refresh() } }
     fun save(p: Preferences) { viewModelScope.launch { prefs.save(p); withContext(Dispatchers.IO) { Reminders.schedule(getApplication()) } } }
-    fun recover() { action { engine.recover(); null } }
+    fun recover() {
+        action { engine.recover(); null }
+        viewModelScope.launch(Dispatchers.IO) { MindfulReminders.schedule(getApplication()) }
+    }
 }
 class MainActivity: ComponentActivity() {
     private val model by lazy { ViewModelProvider(this)[MeditationModel::class.java] }
@@ -126,12 +151,17 @@ class MainActivity: ComponentActivity() {
     private val notificationPermission=registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); enableEdgeToEdge(); Notifications.channels(this)
+        if(intent.action=="mindful_invitation" && savedInstanceState==null) model.invitation=true
         setContent {
             val dark=isSystemInDarkTheme()
             val colors=if(dark) darkColorScheme(primary=Color(0xFFACCDBA),onPrimary=Color(0xFF153423),surfaceContainer=Color(0xFF1C271F),background=Color(0xFF101612),surface=Color(0xFF19221C),secondaryContainer=Color(0xFF2C4435),onSecondaryContainer=Color(0xFFD4E8D9))
                 else lightColorScheme(primary=Color(0xFF456B55),onPrimary=Color.White,surfaceContainer=Color(0xFFEDF2E8),background=Color(0xFFF5F8F1),surface=Color(0xFFEDF2E8),secondaryContainer=Color(0xFFD9E8DC),onSecondaryContainer=Color(0xFF243D2D))
             MaterialTheme(colorScheme=colors) { Still(model,this) }
         }
+    }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if(intent.action=="mindful_invitation") model.invitation=true
     }
     override fun onResume() { super.onResume(); model.recover() }
     fun quoteAttribution() {
@@ -156,13 +186,16 @@ class MainActivity: ComponentActivity() {
     LaunchedEffect(owner) { owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { while(isActive) { m.refresh(); delay(1000) } } }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     Scaffold(bottomBar={ NavigationBar {
-        listOf("Meditation","History","Settings").forEachIndexed { i,label -> NavigationBarItem(selected=tab==i,onClick={tab=i},icon={Text(listOf("◉","▤","⚙")[i])},label={Text(label)}) }
+        listOf("Meditation","History","Settings").forEachIndexed { i,label -> NavigationBarItem(selected=tab==i,onClick={tab=i;m.invitation=false},icon={Text(listOf("◉","▤","⚙")[i])},label={Text(label)}) }
     } }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal=24.dp)) {
             Spacer(Modifier.height(24.dp)); Text("Still",style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Light)
             Text(listOf("A little space to be.","Every quiet moment counts.","Make room for your practice.")[tab],color=MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(16.dp))
-            when(tab) { 0 -> Meditation(m) { a.quoteAttribution() }; 1 -> History(m.history,onImport={a.importHistory()},onExport={a.exportHistory()},transferBusy=m.transferBusy) { row -> m.action {m.engine.store.delete(row.id);null} }; else -> PreferencesScreen(m,a) }
+            if(m.invitation && m.mindful!=null) {
+                BackHandler {m.invitation=false}
+                MindfulInvitation(m.mindful!!,m.active!=null,{tab=0;m.beginMindful()},{m.invitation=false;tab=0})
+            } else when(tab) { 0 -> Meditation(m) { a.quoteAttribution() }; 1 -> History(m.history,onImport={a.importHistory()},onExport={a.exportHistory()},transferBusy=m.transferBusy) { row -> m.action {m.engine.store.delete(row.id);null} }; else -> PreferencesScreen(m,a) }
         }
     }
     m.pendingImport?.let { rows ->
@@ -184,14 +217,14 @@ class MainActivity: ComponentActivity() {
     var custom by remember { mutableStateOf(false) }; var end by remember { mutableStateOf(false) }
     var tick by remember { mutableLongStateOf(0) }
     LaunchedEffect(s) { while(true) { tick=SystemClock.elapsedRealtime(); delay(250) } }
-    val remaining=if(s==null) left else s.left(tick)
+    val remaining=if(s==null) left else if(s.open) s.activeMillis(tick) else s.left(tick)
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),horizontalAlignment=Alignment.CenterHorizontally) {
         Spacer(Modifier.height(20.dp))
         Box(Modifier.size(260.dp),contentAlignment=Alignment.Center) {
-            CircularProgressIndicator(progress={if(s==null) 1f else remaining.toFloat()/s.duration},modifier=Modifier.fillMaxSize(),strokeWidth=3.dp,trackColor=MaterialTheme.colorScheme.surfaceVariant)
+            CircularProgressIndicator(progress={if(s==null || s.open) 1f else remaining.toFloat()/s.duration},modifier=Modifier.fillMaxSize(),strokeWidth=3.dp,trackColor=MaterialTheme.colorScheme.surfaceVariant)
             Column(horizontalAlignment=Alignment.CenterHorizontally) {
-                Text("%02d:%02d".format((remaining+999)/1000/60,(remaining+999)/1000%60),fontSize=56.sp,fontWeight=FontWeight.Light)
-                Text(when { s?.test==true -> "RELIABILITY TEST"; s?.state=="paused" -> "PAUSED"; s!=null -> "JUST BREATHE"; else -> "MINUTES OF STILLNESS" },style=MaterialTheme.typography.labelMedium)
+                Text("%02d:%02d".format((remaining+(if(s?.open==true) 0 else 999))/1000/60,(remaining+(if(s?.open==true) 0 else 999))/1000%60),fontSize=56.sp,fontWeight=FontWeight.Light)
+                Text(when { s?.test==true -> "RELIABILITY TEST"; s?.state=="paused" -> "PAUSED"; s?.open==true -> "MINDFUL · COUNTING UP"; s?.kind==MINDFUL_TIMED -> "MINDFUL MINUTES"; s!=null -> "JUST BREATHE"; else -> "MINUTES OF STILLNESS" },style=MaterialTheme.typography.labelMedium)
             }
         }
         Spacer(Modifier.height(28.dp))
@@ -205,7 +238,8 @@ class MainActivity: ComponentActivity() {
             if(m.message.isNotBlank()) { Spacer(Modifier.height(20.dp)); Text(m.message,style=MaterialTheme.typography.bodyLarge) }
         } else {
             Button(onClick={m.action { if(s.state=="paused") m.engine.resume() else {m.engine.pause(); null} }},modifier=Modifier.fillMaxWidth().height(56.dp)) { Text(if(s.state=="paused") "Resume" else "Pause") }
-            TextButton(onClick={end=true}) { Text("End session") }
+            if(s.open) Button(onClick={m.action {m.engine.finishOpen()}},modifier=Modifier.fillMaxWidth()) {Text("Finish mindful pause")}
+            TextButton(onClick={end=true}) { Text(if(s.open) "Discard session" else "End session") }
             Text("Let your screen lock naturally.",color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.height(24.dp))
@@ -264,7 +298,7 @@ class MainActivity: ComponentActivity() {
         }
         if(dailySessions.isEmpty()) item { Text("No sessions this day.",modifier=Modifier.padding(vertical=16.dp)) }
         items(dailySessions,key={it.id}) { row -> Card(Modifier.fillMaxWidth()) { Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text(row.date.format(DateTimeFormatter.ofPattern("EEE, d MMM yyyy"))); Text("${Instant.ofEpochMilli(row.millis).atZone(ZoneId.of(row.zone)).format(DateTimeFormatter.ofPattern("HH:mm"))} · ${row.duration/60000} min",color=MaterialTheme.colorScheme.onSurfaceVariant) }
+            Column(Modifier.weight(1f)) { if(row.kind!=MEDITATION) Text(if(row.kind==MINDFUL_OPEN) "Mindful Minutes · Open-ended" else "Mindful Minutes · Timed",style=MaterialTheme.typography.labelMedium); Text(row.date.format(DateTimeFormatter.ofPattern("EEE, d MMM yyyy"))); Text("${Instant.ofEpochMilli(row.millis).atZone(ZoneId.of(row.zone)).format(DateTimeFormatter.ofPattern("HH:mm"))} · ${row.duration/60000} min${if(row.kind==MINDFUL_OPEN) " ${row.duration/1000%60}s" else ""}",color=MaterialTheme.colorScheme.onSurfaceVariant) }
             TextButton(onClick={deleting=row}) { Text("Delete") }
         } } }
         item { Spacer(Modifier.height(16.dp)) }
@@ -281,7 +315,18 @@ class MainActivity: ComponentActivity() {
 @Composable fun PreferencesScreen(m: MeditationModel,a: MainActivity) {
     var duration by remember { mutableStateOf(false) }; var time by remember { mutableStateOf(false) }
     var presets by rememberSaveable { mutableStateOf(false) }
+    var mindfulPage by rememberSaveable { mutableStateOf(false) }
     var health by rememberSaveable { mutableStateOf(false) }
+    if(mindfulPage) {
+        BackHandler {mindfulPage=false}
+        val config=m.mindful
+        val nm=a.getSystemService(NotificationManager::class.java)
+        val ready=nm.areNotificationsEnabled() && nm.getNotificationChannel(Notifications.MINDFUL)?.importance!=NotificationManager.IMPORTANCE_NONE
+        if(config!=null) MindfulSettingsScreen(config,ready,{mindfulPage=false},{a.notifications()}) {
+            m.saveMindful(it) {mindfulPage=false}
+        } else Text("Loading settings…")
+        return
+    }
     if(health) {
         BackHandler { health=false }
         TimerHealthScreen(m,a) { health=false }
@@ -294,6 +339,7 @@ class MainActivity: ComponentActivity() {
         OutlinedButton(onClick={presets=true},modifier=Modifier.fillMaxWidth()) { Text("Preset durations · ${p.presets.joinToString(", ")} min") }
         Row(verticalAlignment=Alignment.CenterVertically) { Text("Daily reminder",Modifier.weight(1f)); Switch(checked=p.reminder,onCheckedChange={m.save(p.copy(reminder=it))}) }
         OutlinedButton(onClick={time=true},modifier=Modifier.fillMaxWidth()) { Text("Reminder time · %02d:%02d".format(p.hour,p.minute)) }
+        OutlinedButton(onClick={mindfulPage=true},modifier=Modifier.fillMaxWidth()) {Text("Mindful Minutes ›")}
         OutlinedButton(onClick={health=true},modifier=Modifier.fillMaxWidth()) { Text("Timer Health ›") }
         Text("Permissions, battery, bell audio and reliability tests",style=MaterialTheme.typography.bodySmall,
             color=MaterialTheme.colorScheme.onSurfaceVariant)

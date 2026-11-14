@@ -20,7 +20,7 @@ class HistoryBackupTest {
     @Test fun unsupportedVersionAndMalformedFilesAreRejected() {
         assertThrows(IllegalArgumentException::class.java) { HistoryBackup.decode("not JSON") }
         assertThrows(IllegalArgumentException::class.java) { HistoryBackup.decode(HistoryBackup.encode(listOf(row))+" trailing") }
-        val root=JSONObject(HistoryBackup.encode(listOf(row))).put("version",2)
+        val root=JSONObject(HistoryBackup.encode(listOf(row))).put("version",3)
         assertThrows(IllegalArgumentException::class.java) { HistoryBackup.decode(root.toString()) }
     }
     @Test fun invalidEntriesAreRejectedBeforeDatabaseWrites() {
