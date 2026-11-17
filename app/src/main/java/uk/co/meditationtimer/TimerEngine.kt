@@ -51,7 +51,7 @@ class TimerEngine internal constructor(
         if(s.boot!=clock.boot()) { recover();return "Session discarded after reboot." }
         val elapsed=s.activeMillis(clock.elapsed())
         if(elapsed<1000) return "Take at least a second before finishing, or discard the session."
-        if(store.complete(s,clock.wall(),elapsed)) cancel(s)
+        if(store.complete(s,clock.wall(),elapsed)) { cancel(s); WellnessSync.requestSafely(context) }
         return null
     }
     @Synchronized fun pause() {
@@ -95,6 +95,7 @@ class TimerEngine internal constructor(
         if(s.test) store.note("test", "Expected: ${Instant.ofEpochMilli(s.expectedWall)}\nCallback: ${Instant.ofEpochMilli(actual)}\nMonotonic delay: ${clock.elapsed()-s.deadline} ms\nCompletion handler: ran via $source.\nAudio: pending invocation.")
         try { bell(true,if(s.test) s.id else null) }
         catch(e:Exception) { store.note("audio","Bell service failed: ${e.message}"); if(s.test) store.note("test",store.note("test")+"\nBell service failed: ${e.message}") }
+        if(!s.test) WellnessSync.requestSafely(context)
     }
     companion object {
         @Volatile private var instance: TimerEngine? = null

@@ -1,6 +1,6 @@
 # Still
 
-A small native Kotlin/Compose meditation timer for Pixel 7 Pro / GrapheneOS. Android 12+ (API 31), compile/target API 36. No accounts, Google Play Services, analytics, or cloud storage. Core meditation features work offline; optional ZenQuotes cards require internet.
+A small native Kotlin/Compose meditation timer for Pixel 7 Pro / GrapheneOS. Android 12+ (API 31), compile/target API 36. No accounts, Google Play Services or analytics. Core meditation features work offline; optional ZenQuotes cards and opt-in uploads to your own Wellness backend use internet.
 
 ## Build and install
 
@@ -59,7 +59,7 @@ Successful responses are kept in memory for up to an hour to limit requests. Fai
 
 - `Model.kt`: pure monotonic countdown/state calculations, statistics and local-time reminder calculation.
 - `TimerEngine.kt`: one application-scoped, serialized timer coordinator. A persisted session ID and revision reject stale callbacks after pause, resume and cancellation. All transitions use this coordinator. No UI delay performs completion.
-- `Storage.kt`: versioned SQLite database for active state and history; DataStore preferences. Schema version 2 adds session type/count-up fields while preserving existing records and active timers. SQLite is used directly to keep the small atomic active-session/history transaction easy to inspect, without a Room code-generation dependency. The session primary key and conditional transaction prevent duplicate history entries. Statistics derive from history; nothing increments redundant counters.
+- `Storage.kt`: versioned SQLite database for active state and history; DataStore preferences. Schema version 3 adds delivery acknowledgements for optional Wellness Sync; upgrades from versions 1 and 2 preserve saved history and active timers. SQLite is used directly to keep the small atomic active-session/history transaction easy to inspect, without a Room code-generation dependency. The session primary key and conditional transaction prevent duplicate history entries. Statistics derive from history; nothing increments redundant counters.
 - `MindfulModel.kt`, `MindfulPreferences.kt`, `MindfulReminders.kt`, `MindfulScreens.kt`: weekday/activity configuration, deterministic daily slots, inexact nudge delivery and mindful UI.
 - `Background.kt`: alarm receivers, inexact reminder scheduling and short media-playback foreground service. A mutex serializes reminder scheduling/delivery. One date marker suppresses repeat reminders on the same local day.
 - `ZenQuotes.kt` / `QuoteCard.kt`: foreground-only quote requests, connectivity handling and attributed quote display.
@@ -103,3 +103,7 @@ See [GrapheneOS manual checklist](docs/TESTING.md) and [original requirements](d
 ## GitHub Actions
 
 Pushes and pull requests to `main` run unit tests, lint and a debug APK build. You can also run the workflow manually. Open [Actions](https://github.com/snillosh/meditation-timer/actions), select a successful run, and download its APK artifact from the summary; extract `app-debug.apk` to install. APKs are retained for 30 days and reports for 14 days. Emulator tests remain a local check. CI caches its debug signing key; if that cache expires, installing a newly signed APK over an earlier build may require uninstalling first (which deletes local history). Local and CI debug signing keys also differ.
+
+## Wellness Sync (1.1)
+
+Settings → **Wellness Sync** connects to your own backend. It is disabled by default. Enabling it uploads existing and future completed meditation, timed Mindful Minutes and open-ended Mindful Minutes. Reliability tests, prompts and discarded sessions are excluded. The app keeps its own SQLite history and works offline. See [setup, data and verification](WELLNESS_SYNC.md).

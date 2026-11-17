@@ -113,6 +113,7 @@ class MeditationModel(app: Application): AndroidViewModel(app) {
         pendingImport=null
         transfer {
             val result=engine.store.importHistory(rows)
+            WellnessSync.requestSafely(getApplication())
             "Imported ${result.added} sessions; skipped ${result.skipped} duplicates."
         }
     }
@@ -128,6 +129,7 @@ class MeditationModel(app: Application): AndroidViewModel(app) {
     fun action(block: () -> String?) { viewModelScope.launch { error=withContext(Dispatchers.IO) { block() }; refresh() } }
     fun save(p: Preferences) { viewModelScope.launch { prefs.save(p); withContext(Dispatchers.IO) { Reminders.schedule(getApplication()) } } }
     fun recover() {
+        WellnessSync.maintainSafely(getApplication())
         action { engine.recover(); null }
         viewModelScope.launch(Dispatchers.IO) { MindfulReminders.schedule(getApplication()) }
     }
@@ -317,6 +319,12 @@ class MainActivity: ComponentActivity() {
     var presets by rememberSaveable { mutableStateOf(false) }
     var mindfulPage by rememberSaveable { mutableStateOf(false) }
     var health by rememberSaveable { mutableStateOf(false) }
+    var wellness by rememberSaveable { mutableStateOf(false) }
+    if(wellness) {
+        BackHandler { wellness=false }
+        WellnessSyncScreen(a) { wellness=false }
+        return
+    }
     if(mindfulPage) {
         BackHandler {mindfulPage=false}
         val config=m.mindful
@@ -341,6 +349,7 @@ class MainActivity: ComponentActivity() {
         OutlinedButton(onClick={time=true},modifier=Modifier.fillMaxWidth()) { Text("Reminder time · %02d:%02d".format(p.hour,p.minute)) }
         OutlinedButton(onClick={mindfulPage=true},modifier=Modifier.fillMaxWidth()) {Text("Mindful Minutes ›")}
         OutlinedButton(onClick={health=true},modifier=Modifier.fillMaxWidth()) { Text("Timer Health ›") }
+        OutlinedButton(onClick={wellness=true},modifier=Modifier.fillMaxWidth()) { Text("Wellness Sync ›") }
         Text("Permissions, battery, bell audio and reliability tests",style=MaterialTheme.typography.bodySmall,
             color=MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(24.dp))

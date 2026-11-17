@@ -2,11 +2,15 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.plugin.compose
 android {
  namespace = "uk.co.meditationtimer"
  compileSdk = 36
- defaultConfig { applicationId = "uk.co.meditationtimer"; minSdk = 31; targetSdk = 36; versionCode = 1; versionName = "1.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+ defaultConfig { applicationId = "uk.co.meditationtimer"; minSdk = 31; targetSdk = 36; versionCode = 2; versionName = "1.1"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
  buildFeatures { compose = true }
+ testOptions { unitTests.isIncludeAndroidResources = true }
  compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
 }
 dependencies {
+ implementation("androidx.work:work-runtime:2.11.0")
+ testImplementation("androidx.work:work-testing:2.11.0")
+ testImplementation("org.robolectric:robolectric:4.16.1")
  implementation(platform("androidx.compose:compose-bom:2026.02.00"))
  implementation("androidx.activity:activity-compose:1.12.4")
  implementation("androidx.compose.material3:material3")
