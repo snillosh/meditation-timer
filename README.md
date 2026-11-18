@@ -1,5 +1,8 @@
 # Still
 
+For a fresh Codex session, start with [AGENTS.md](AGENTS.md) and
+[the agent handoff](HANDOFF.md): system map, current state, code paths, checks and next steps.
+
 A small native Kotlin/Compose meditation timer for Pixel 7 Pro / GrapheneOS. Android 12+ (API 31), compile/target API 36. No accounts, Google Play Services or analytics. Core meditation features work offline; optional ZenQuotes cards and opt-in uploads to your own Wellness backend use internet.
 
 ## Build and install
